@@ -1,0 +1,56 @@
+---
+title: "Keras Tutorial"
+author: "Miguel Conde"
+date: "24 de abril de 2017"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center")
+```
+
+[R Interface to the Keras Deep Learning Library](https://cran.r-project.org/web/packages/kerasR/vignettes/introduction.html)
+[Keras: Deep Learning library for Theano and TensorFlow](https://keras.io/)
+
+Keras is a high-level neural networks API, written in Python and capable of running on top of either [TensorFlow](https://github.com/tensorflow/tensorflow) or [Theano](https://github.com/Theano/Theano). It was developed with a focus on enabling fast experimentation. Being able to go from idea to result with the least possible delay is key to doing good research.
+
+Use Keras if you need a deep learning library that:
+
+* Allows for easy and fast prototyping (through user friendliness, modularity, and extensibility).
+* Supports both convolutional networks and recurrent networks, as well as combinations of the two.
+* Runs seamlessly on CPU and GPU.
+
+Keras provides a language for building neural networks as connections of general purpose layers. 
+
+NN tutorials:
+
+* [Hacker’s guide to Neural Networks](http://karpathy.github.io/neuralnets/)
+* [Neural Networks and Deep Learning](http://neuralnetworksanddeeplearning.com/)
+* [Understanding LSTM Networks](http://colah.github.io/posts/2015-08-Understanding-LSTMs/)
+* [A Beginner’s Guide to Recurrent Networks and LSTMs](https://deeplearning4j.org/lstm)
+
+## Example 1: Boston Housing Data
+
+Build an empty Sequential model.
+```{r}
+library(reticulate)
+use_condaenv("tensorflow", required = TRUE)
+py_discover_config(required_module = "keras")
+
+```
+
+```{r}
+
+Sys.which("python")
+```
+
+```{r}
+library(kerasR)
+mod <- Sequential()
+```
+
