@@ -1,13 +1,16 @@
+# Based on https://keras.rstudio.com/
+# 
+
 if (!require(keras)) {
   devtools::install_github("rstudio/keras")
   library(keras)
 }
 
-install_tensorflow()
+# install_tensorflow()
 # To install a version of TensorFlow that takes advantage of Nvidia GPUs if 
 # you have the correct CUDA libraries installed.
 # install_tensorflow(gpu = TRUE)
-
+install_keras()
 
 # Test keras --------------------------------------------------------------
 
@@ -108,4 +111,6 @@ plot(history)
 loss_and_metrics <- model %>% evaluate(test_x, test_y, batch_size = 128)
 
 # Generate predictions on new data:
-classes <- model %>% predict(test_x, batch_size = 128)
+probs <- model %>% predict(test_x, batch_size = 128)
+
+classes <- model %>% predict_classes(test_x, batch_size = 128)
