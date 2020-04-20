@@ -9,7 +9,7 @@ if (!require(keras)) {
 # install_tensorflow()
 # To install a version of TensorFlow that takes advantage of Nvidia GPUs if 
 # you have the correct CUDA libraries installed.
-# install_tensorflow(gpu = TRUE)
+# install_keras(tensorflow = "gpu")
 install_keras()
 
 # Test keras --------------------------------------------------------------
