@@ -615,3 +615,281 @@ history <- model %>% fit(
 
 plot(history)
 
+
+# 2.3 - LSTMs and GRUs ----------------------------------------------------
+
+## Using the LSTM layer in Keras
+
+model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = max_features, output_dim = 32) %>%
+  layer_lstm(units = 32) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("acc")
+)
+
+history <- model %>% fit(
+  input_train, y_train,
+  epochs = 10,
+  batch_size = 128,
+  validation_split = 0.2
+)
+
+## Plotting results
+
+plot(history)
+
+
+# 3 - Advanced use of RNNs ------------------------------------------------
+
+# 3 advanced techniques:
+#
+# Recurrent dropout — This is a specific, built-in way to use dropout to fight 
+#                     overfitting in recurrent layers.
+# 
+# Stacking recurrent layers — This increases the representational power of the 
+#                             network (at the cost of higher computational loads).
+# 
+# Bidirectional recurrent layers — These present the same information to a 
+#                                  recurrent network in different ways, 
+#                                  increasing accuracy and mitigating forgetting
+#                                  issues.
+
+## Inspecting the data of the Jena weather dataset
+
+library(readr)
+
+data_dir <- here::here("data", "downloads", "jena_climate")
+fname <- file.path(data_dir, "jena_climate_2009_2016.csv")
+
+data <- read_csv(fname)
+
+glimpse(data)
+
+## Plotting the temperature timeseries
+
+library(ggplot2)
+
+ggplot(data, aes(x = 1:nrow(data), y = `T (degC)`)) + geom_line()
+
+## Plotting the first 10 days of the temperature timeseries
+
+ggplot(data[1:1440,], aes(x = 1:1440, y = `T (degC)`)) + 
+  geom_line() + 
+  geom_vline(xintercept = 144*(1:10))
+
+# The exact formulation of the problem will be as follows: 
+# 
+# Given data going as far back as lookback timesteps (a timestep is 10 minutes) 
+# and sampled every steps timesteps, can you predict the temperature in delay 
+# timesteps? 
+  
+# You’ll use the following parameter values:
+#
+# lookback = 720 — Observations will go back 5 days.
+# steps    =   6 — Observations will be sampled at one data point per hour.
+# delay    = 144 — Targets will be 24 hours in the future.
+
+
+
+# 3.1 - PREPROCESS --------------------------------------------------------
+
+# Preprocess the data to a format a neural network can ingest. 
+#
+# This is easy: the data is already numerical, so you don’t need to do any 
+# vectorization. But each timeseries in the data is on a different scale (for 
+# example, temperature is typically between -20 and +30, but pressure, measured 
+# in mbar, is around 1,000). 
+#
+# You’ll normalize each timeseries independently so that they all take small 
+# values on a similar scale.
+
+## Converting the data to a floating point matrix
+
+data <- data.matrix(data[,-1])
+
+## Normalizing the data
+
+train_data <- data[1:200000,]
+
+mean <- apply(train_data, 2, mean)
+std <- apply(train_data, 2, sd)
+
+data <- scale(data, center = mean, scale = std)
+
+# 3.2 - GENERATOR FUNCTION ------------------------------------------------
+
+# Write a generator function that takes the current array of float data and 
+# yields batches of data from the recent past, along with a target temperature 
+# in the future. 
+#
+# Because the samples in the dataset are highly redundant (sample N and sample 
+# N + 1 will have most of their timesteps in common), it would be wasteful to 
+# explicitly allocate every sample. Instead, you’ll generate the samples on the 
+# fly using the original data.
+#
+# EXAMPLE
+
+sequence_generator <- function(start) {
+  
+  value <- start - 1
+  
+  out <- function() {
+    value <<- value + 1
+    value
+  }
+  
+  return(out)
+}
+
+gen <- sequence_generator(10)
+
+gen()
+
+gen()
+
+# DATA GENERATOR FUNCTION
+#
+# It yields a list (samples, targets), where samples is one batch of input data 
+# and targets is the corresponding array of target temperatures.
+#
+# ARGUMENTS
+#
+# - data — The original array of floating-point data, which you normalized 
+#          (time, features)
+# - lookback — How many timesteps back the input data should go.
+# - delay — How many timesteps in the future the target should be.
+# - step — The period, in timesteps, at which you sample data. You’ll set it 6 
+#          in order to draw one data point every hour.
+# - min_index and max_index — Indices in the data array that delimit which 
+#                             timesteps to draw from. This is useful for keeping 
+#                             a segment of the data for validation and another 
+#                             for testing.
+# - shuffle — Whether to shuffle the samples or draw them in chronological order.
+# - batch_size — The number of samples per batch.
+# 
+# RETURN
+#
+generator <- function(data, lookback, delay, min_index, max_index,
+                      shuffle = FALSE, batch_size = 128, step = 6) {
+  
+  if (is.null(max_index))
+    max_index <- nrow(data) - delay - 1
+  
+  i <- min_index + lookback
+  
+  function() {
+    
+    if (shuffle) {
+      rows <- sample(c((min_index+lookback):max_index), size = batch_size)
+    } else {
+      if (i + batch_size >= max_index)
+        i <<- min_index + lookback
+      rows <- c(i:min(i+batch_size, max_index))
+      i <<- i + length(rows)
+    }
+    # print(rows)
+    
+    samples <- array(0, dim = c(length(rows),     # Batch size
+                                lookback / step,  # Time
+                                dim(data)[[-1]])) # Features
+    targets <- array(0, dim = c(length(rows)))
+    
+    for (j in 1:length(rows)) {
+      indices <- seq(rows[[j]] - lookback, rows[[j]],
+                     length.out = dim(samples)[[2]])
+      samples[j,,] <- data[indices,]
+      targets[[j]] <- data[rows[[j]] + delay,2]
+    }
+    
+    list(samples, targets)
+  }
+}
+
+# Preparing the training, validation, and test generators
+
+lookback <- 1440
+step <- 6
+delay <- 144
+batch_size <- 128
+
+train_gen <- generator(
+  data,
+  lookback = lookback,
+  delay = delay,
+  min_index = 1,
+  max_index = 200000,
+  shuffle = TRUE,
+  step = step,
+  batch_size = batch_size
+)
+
+val_gen = generator(
+  data,
+  lookback = lookback,
+  delay = delay,
+  min_index = 200001,
+  max_index = 300000,
+  step = step,
+  batch_size = batch_size
+)
+
+test_gen <- generator(
+  data,
+  lookback = lookback,
+  delay = delay,
+  min_index = 300001,
+  max_index = NULL,
+  step = step,
+  batch_size = batch_size
+)
+
+# How many steps to draw from val_gen in order to see the entire validation set
+val_steps <- (300000 - 200001 - lookback) / batch_size
+# How many steps to draw from test_gen in order to see the entire test set
+test_steps <- (nrow(data) - 300001 - lookback) / batch_size
+
+## Computing the common-sense baseline MAE
+
+evaluate_naive_method <- function() {
+  
+  batch_maes <- c()
+  
+  for (step in 1:val_steps) {
+    c(samples, targets) %<-% val_gen()
+    preds <- samples[,dim(samples)[[2]],2]
+    mae <- mean(abs(preds - targets))
+    batch_maes <- c(batch_maes, mae)
+  }
+  
+  print(mean(batch_maes))
+}
+
+# Because the temperature data has been normalized to be centered on 0 and have 
+# a standard deviation of 1, this number isn’t immediately interpretable.
+evaluate_naive_method() * std["T (degC)"] # + mean["T (degC)"] # 2.457209 ºC
+
+## Training and evaluating a densely connected model
+
+model <- keras_model_sequential() %>%
+  layer_flatten(input_shape = c(lookback / step, dim(data)[-1])) %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1)
+
+model %>% compile(
+  optimizer = optimizer_rmsprop(),
+  loss = "mae"
+)
+
+history <- model %>% fit_generator(
+  train_gen,
+  steps_per_epoch = 500,
+  epochs = 20,
+  validation_data = val_gen,
+  validation_steps = val_steps
+)
+
+plot(history)
